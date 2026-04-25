@@ -1792,6 +1792,14 @@ env_manager() {
                 sed -i "s|^$prefix$upper_key=.*|$prefix$upper_key=\"$value\"|" "$env_file"  # harbor-lint disable=HARBOR002
             fi
         else
+            # Defensively ensure the env file ends with a newline before
+            # appending — otherwise a missing trailing newline upstream
+            # (e.g. profiles/default.env hand-edited without one) glues the
+            # new line onto the previous one and breaks subsequent grep
+            # lookups (`^KEY=` no longer matches mid-line).
+            if [ -s "$env_file" ] && [ -n "$(tail -c1 "$env_file")" ]; then
+                printf '\n' >>"$env_file"
+            fi
             echo "$prefix$upper_key=\"$value\"" >>"$env_file"
             if [[ "$prefix" == "HARBOR_" ]]; then
                 log_warn "Key $prefix$upper_key is not a known Harbor config variable. To set a service env var, use: harbor config <service> set <key> <value>"

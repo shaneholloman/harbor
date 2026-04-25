@@ -766,6 +766,71 @@ type RowOutcome = {
   suites: SuiteOutcome[];
 };
 
+// Stage a per-row writable harbor home at /opt/harbor-test/work via an
+// overlayfs mount. lowerdir is the bind-mounted host repo (read-only
+// from the overlay's perspective); upperdir is in-container scratch
+// where writes land. Without this, every `harbor config set/unset/
+// update` call inside a row writes through the bind mount onto the
+// host repo — clobbering ownership (root inside container vs. the host
+// user) and racing with other rows.
+//
+// Overlayfs (vs. a directory of symlinks) gives nested containers a
+// proper view: `harbor dev <script>` runs `docker run -v
+// $harbor_home:$harbor_home denoland/deno:distroless …`. A symlink-tree
+// dangles inside that nested container because the symlink targets
+// (/opt/harbor-test/repo) are not mounted there. An overlay merge
+// presents real directory entries that the inner bind-mount carries
+// through.
+async function stageHarborWork(
+  runtime: string,
+  container: string,
+  row: string,
+): Promise<void> {
+  log(row, "staging /opt/harbor-test/work (selective copy of bind-mounted repo)...");
+  // Real (non-hardlink, non-symlink) copy of the parts of the repo harbor
+  // needs at runtime, into per-row writable scratch. Skips vendored trees
+  // and host-only data:
+  //   - services/webui (~900 MB): vendored Open WebUI source; harbor never
+  //     reads it, only its compose.*.yml at services/ root.
+  //   - app/: Tauri GUI sources, irrelevant to CLI tests.
+  //   - docs/: markdown only.
+  //   - tests/artifacts/: prior-run logs (huge, never read).
+  //   - .env: stale state from the host; harbor.sh will recreate from
+  //     profiles/default.env on first invocation.
+  //   - node_modules/: vendored bytecode; nested deno fetches its own deps.
+  //
+  // `tar | tar` is the cheapest portable selective-copy: a single pass,
+  // honours --exclude, preserves perms/ownership, and crosses the
+  // device boundary (bind-mount → container layer) that defeated `cp -al`.
+  //
+  // Tear down any leftover from a `--keep` re-run before re-cloning.
+  const excludes = [
+    "./.env",
+    "./.git",
+    "./.history",
+    "./app",
+    "./docs",
+    "./node_modules",
+    "./services/webui",
+    "./tests/artifacts",
+  ].map((p) => `--exclude='${p}'`).join(" ");
+  const setup = [
+    "set -e",
+    "rm -rf /opt/harbor-test/work",
+    "mkdir -p /opt/harbor-test/work",
+    `tar -C /opt/harbor-test/repo -cf - ${excludes} . | tar -C /opt/harbor-test/work -xf -`,
+  ].join(" && ");
+  const r = await run(
+    [runtime, "exec", container, "bash", "-c", setup],
+    { silent: true },
+  );
+  if (r.code !== 0) {
+    throw new Error(
+      `${row}: failed to stage harbor work overlay: ${r.stderr.trim() || r.stdout.trim()}`,
+    );
+  }
+}
+
 async function execSuite(
   probe: HostProbe,
   row: string,
@@ -780,6 +845,10 @@ async function execSuite(
     "exec",
     "-e", `HARBOR_TEST_INSTALL_SOURCE=${installSource}`,
     "-e", "HARBOR_TEST_REPO=/opt/harbor-test/repo",
+    // Per-row writable harbor home — see stageHarborWork above. harbor.sh
+    // honours $HARBOR_HOME (line 5340-ish) and writes .env / compose cache
+    // there instead of into the bind-mounted repo.
+    "-e", "HARBOR_HOME=/opt/harbor-test/work",
     // harbor ln drops a symlink into ${HARBOR_CLI_PATH} (default ~/.local/bin).
     // docker exec is non-interactive and does not source profile/.bashrc, so we
     // inject that directory ourselves.
@@ -872,6 +941,7 @@ async function runRow(
   try {
     await waitForSystemReady(probe.runtime, container, row, isOpenRc);
     await waitForInnerDocker(probe.runtime, container, row, isOpenRc);
+    await stageHarborWork(probe.runtime, container, row);
 
     for (const suite of suites) {
       const logPath = `${hostArtifactsDir}/${suite.short}.log`;
