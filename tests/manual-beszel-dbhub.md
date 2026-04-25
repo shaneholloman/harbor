@@ -7,29 +7,20 @@ Walk through both in ~5 minutes.
 
 ## Beszel — monitor this host
 
-**Outcome:** the hub dashboard shows live CPU, memory, disk, and container metrics for the machine running Harbor.
+**Outcome:** open the hub URL and the local Harbor host is already in the dashboard with live metrics. No signup, no Add-System click, no key paste.
 
 ```bash
 harbor up beszel --open
 ```
 
-In the browser:
+The browser opens already signed in (via beszel's `AUTO_LOGIN`). **Pass:** within ~10 seconds you see a `harbor-host` row with live values for CPU %, Memory, Disk, Load, and Temperature. Click into the row — graphs populate within a minute.
 
-1. Create the admin account (any email/password — local only).
-2. Click **Add System**.
-   - Name: `harbor-host`
-   - Host/IP: `beszel-agent`
-   - Port: `45876`
-   - Copy the `ssh-ed25519 AAAA…` key shown in the dialog.
-
-Back in the terminal, paste the key and restart:
+If you ever need the admin credentials (e.g. to log in from another browser):
 
 ```bash
-harbor config set beszel.agent.key 'ssh-ed25519 AAAA… <the key>'
-harbor restart beszel
+harbor config get beszel.user.email
+harbor config get beszel.user.password
 ```
-
-Wait ~30 seconds and refresh the dashboard. **Pass:** `harbor-host` row turns green with live values for CPU %, Memory, Disk, and a container count > 0. Click into the row — graphs populate within a minute.
 
 ```bash
 harbor down beszel

@@ -5391,6 +5391,12 @@ ensure_env_file
 env_manager --silent set user.id "$(id -u)"
 env_manager --silent set group.id "$(id -g)"
 env_manager --silent set home.volume "$harbor_home"
+# Auto-generate Beszel admin password on first run; preserved on subsequent
+# invocations so the hub's first-boot user creation matches what the user
+# can read back via `harbor config get beszel.user.password`.
+if [ -z "$(env_manager --silent get beszel.user.password)" ]; then
+    env_manager --silent set beszel.user.password "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | dd bs=1 count=16 2>/dev/null)"
+fi
 default_options=($(env_manager get services.default | tr ';' ' '))
 default_tunnels=($(env_manager get services.tunnels | tr ';' ' '))
 default_capabilities=($(env_manager get capabilities.default | tr ';' ' '))

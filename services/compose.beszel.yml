@@ -2,50 +2,52 @@ services:
   beszel:
     container_name: ${HARBOR_CONTAINER_PREFIX}.beszel
     image: ${HARBOR_BESZEL_IMAGE}:${HARBOR_BESZEL_VERSION}
-    # Run as the host user so the bind-mounted data dir stays writable from
-    # the host (no `sudo` required for resets / backups documented below).
     user: "${HARBOR_USER_ID}:${HARBOR_GROUP_ID}"
     env_file:
       - ./.env
       - ./services/beszel/override.env
+    environment:
+      # First-boot: create the admin user and let visitors auto-login.
+      # https://beszel.dev/guide/environment-variables
+      USER_EMAIL: ${HARBOR_BESZEL_USER_EMAIL}
+      USER_PASSWORD: ${HARBOR_BESZEL_USER_PASSWORD}
+      AUTO_LOGIN: ${HARBOR_BESZEL_USER_EMAIL}
+      SHARE_ALL_SYSTEMS: "true"
     ports:
       - ${HARBOR_BESZEL_HOST_PORT}:8090
     volumes:
       - ${HARBOR_BESZEL_WORKSPACE}/data:/beszel_data
-    # Depend on the init so the bind-mounted data dir gets chowned to the
-    # host user before this container — which runs as that user — starts.
-    depends_on:
-      beszel-agent-init:
-        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://localhost:8090"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     networks:
       - harbor-network
 
-  # One-shot init that materializes the agent KEY_FILE. Needed because the
-  # agent image is distroless (no shell) and the agent binary refuses to
-  # start with an empty key, which would crash-loop the container before
-  # the user has a chance to create the hub admin and copy the SSH key.
-  beszel-agent-init:
-    container_name: ${HARBOR_CONTAINER_PREFIX}.beszel-agent-init
+  # Post-hub sidecar: pre-provisions the universal token row and extracts
+  # the hub's public SSH key so the agent self-registers without any UI
+  # clicks. See services/beszel/agent-register.sh for the full flow.
+  beszel-agent-register:
+    container_name: ${HARBOR_CONTAINER_PREFIX}.beszel-agent-register
     image: alpine:3.20
-    # Runs as root so `apk add openssh-keygen` works. The init script chowns
-    # everything it writes to HARBOR_USER_ID:HARBOR_GROUP_ID before exiting,
-    # so the materialized key.pub stays recoverable from the host without
-    # `sudo` if the user ever needs to delete it.
     env_file:
       - ./.env
       - ./services/beszel/override.env
     environment:
-      HARBOR_BESZEL_AGENT_KEY: ${HARBOR_BESZEL_AGENT_KEY}
+      USER_EMAIL: ${HARBOR_BESZEL_USER_EMAIL}
+      SYSTEM_NAME: ${HARBOR_BESZEL_SYSTEM_NAME}
       HARBOR_USER_ID: ${HARBOR_USER_ID}
       HARBOR_GROUP_ID: ${HARBOR_GROUP_ID}
-    entrypoint: ["/bin/sh", "/usr/local/bin/agent-key-init.sh"]
+    entrypoint: ["/bin/sh", "/usr/local/bin/agent-register.sh"]
     volumes:
-      - ./services/beszel/agent-key-init.sh:/usr/local/bin/agent-key-init.sh:ro
+      - ./services/beszel/agent-register.sh:/usr/local/bin/agent-register.sh:ro
       - ${HARBOR_BESZEL_WORKSPACE}/agent:/agent_data
-      # Mounted so the init can chown it on first launch — Docker creates
-      # bind-mount targets as root by default, which would lock out the
-      # host-user-owned hub container.
       - ${HARBOR_BESZEL_WORKSPACE}/data:/beszel_data
+    depends_on:
+      beszel:
+        condition: service_healthy
     networks:
       - harbor-network
 
@@ -56,21 +58,18 @@ services:
       - ./.env
       - ./services/beszel/override.env
     environment:
-      # Agent listens on a TCP port reachable from the hub over the
-      # internal harbor network at beszel-agent:${HARBOR_BESZEL_AGENT_PORT}.
       LISTEN: ${HARBOR_BESZEL_AGENT_PORT}
-      # KEY_FILE is populated by beszel-agent-init from
-      # HARBOR_BESZEL_AGENT_KEY (or a placeholder if empty).
-      KEY_FILE: /agent_data/key.pub
-      TOKEN: ${HARBOR_BESZEL_AGENT_TOKEN}
+      # Self-registration via WebSocket — see beszel.dev's Agent Installation
+      # docs. KEY_FILE and TOKEN_FILE are written by beszel-agent-register.
       HUB_URL: ${HARBOR_BESZEL_AGENT_HUB_URL}
+      KEY_FILE: /agent_data/key.pub
+      TOKEN_FILE: /agent_data/token
+      SYSTEM_NAME: ${HARBOR_BESZEL_SYSTEM_NAME}
     volumes:
       - ${HARBOR_BESZEL_WORKSPACE}/agent:/agent_data:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      beszel-agent-init:
+      beszel-agent-register:
         condition: service_completed_successfully
-      beszel:
-        condition: service_started
     networks:
       - harbor-network
