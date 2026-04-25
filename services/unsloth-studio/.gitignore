@@ -1,3 +1,4 @@
 workspace/
 .hf-cache/
+.studio-auth/
 *.ipynb_checkpoints

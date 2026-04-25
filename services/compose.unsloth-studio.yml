@@ -15,12 +15,26 @@ services:
       # the cryptic `invalid spec: :/root/.cache/huggingface` compose error.
       # The fallback lives under the service dir and is gitignored.
       - ${HARBOR_HF_CACHE:-./services/unsloth-studio/.hf-cache}:/root/.cache/huggingface
-    # Wait for the init sidecar to chown the bind-mount target so the
+      # Persist Studio's auth state (auth.db + .bootstrap_password) across
+      # container recreates. Without this the auth DB resets on every
+      # `harbor down/up`, which would invalidate the API key minted by the
+      # bootstrap sidecar and force a fresh round of compose-up cascades.
+      - ./services/unsloth-studio/.studio-auth:/home/unsloth/.unsloth/studio/auth
+    # Wait for the init sidecar to chown the bind-mount targets so the
     # workspace dir on the host stays owned by the host user — recoverable
     # without `sudo` even after the upstream entrypoint `chmod -R 777`s it.
     depends_on:
       unsloth-studio-init:
         condition: service_completed_successfully
+    # Probed by unsloth-studio-bootstrap. /api/health is unauthenticated and
+    # returns 200 once uvicorn has bound the port, which lines up with the
+    # earliest moment the bootstrap script's API calls will succeed.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     networks:
       - harbor-network
 
@@ -41,5 +55,43 @@ services:
     volumes:
       - ./services/unsloth-studio/workspace-init.sh:/usr/local/bin/workspace-init.sh:ro
       - ${HARBOR_UNSLOTH_STUDIO_WORKSPACE}:/workspace/work
+      # Pre-create + chown to the in-container `unsloth` user (uid=1001).
+      # See workspace-init.sh — without this Docker creates the bind-mount
+      # target as root:root and Studio fails to write its auth.db.
+      - ./services/unsloth-studio/.studio-auth:/studio_auth
+    networks:
+      - harbor-network
+
+  # Post-Studio sidecar: turns the manual "sign in, change password,
+  # generate API key, harbor config set unsloth-studio.api.key sk-..."
+  # sequence into a zero-click bootstrap. Mirrors the beszel-agent-register
+  # pattern (services/beszel/agent-register.sh) — runs after the main
+  # service is healthy, talks to its API, persists the result.
+  #
+  # Studio's auth.db is not bind-mounted, so it resets on every container
+  # recreate. The script handles that by validating the stored key first
+  # and re-running the flow only when it 401s. See bootstrap.sh.
+  unsloth-studio-bootstrap:
+    container_name: ${HARBOR_CONTAINER_PREFIX}.unsloth-studio-bootstrap
+    image: alpine:3.20
+    env_file:
+      - ./.env
+      - ./services/unsloth-studio/override.env
+    environment:
+      HARBOR_USER_ID: ${HARBOR_USER_ID}
+      HARBOR_GROUP_ID: ${HARBOR_GROUP_ID}
+      STUDIO_URL: http://unsloth-studio:8000
+    entrypoint: ["/bin/sh", "/usr/local/bin/bootstrap.sh"]
+    volumes:
+      - ./services/unsloth-studio/bootstrap.sh:/usr/local/bin/bootstrap.sh:ro
+      # .env is mounted writable so the script can persist the freshly
+      # minted API key. Cross-integration compose files (webui, boost,
+      # aider) substitute HARBOR_UNSLOTH_STUDIO_API_KEY at compose time,
+      # so writing here means the next `harbor up <integration>` picks
+      # up the real key without any manual step.
+      - ./.env:/harbor_env
+    depends_on:
+      unsloth-studio:
+        condition: service_healthy
     networks:
       - harbor-network
