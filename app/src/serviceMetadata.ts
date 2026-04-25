@@ -977,4 +977,12 @@ export const serviceMetadata: Record<string, Partial<HarborService>> = {
         wikiUrl: `${wikiUrl}/2.3.82-Satellite-Beszel`,
         tooltip: 'Lightweight server monitoring with historical data, docker stats, and alerts.',
     },
+    'unsloth-studio': {
+        name: 'Unsloth Studio',
+        tags: [HST.satellite],
+        projectUrl: 'https://github.com/unslothai/unsloth',
+        logo: 'https://github.com/unslothai.png?size=200',
+        wikiUrl: `${wikiUrl}/2.3.83-Satellite-Unsloth-Studio`,
+        tooltip: 'No-code web UI for fine-tuning LLMs with Unsloth. 2x faster training and 70% less memory, powered by llama.cpp + Hugging Face.',
+    },
 };
