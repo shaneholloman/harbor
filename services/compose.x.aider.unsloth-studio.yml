@@ -1,0 +1,4 @@
+services:
+  aider:
+    volumes:
+      - ./services/aider/configs/aider.unsloth-studio.yml:/root/.aider/unsloth-studio.yml
