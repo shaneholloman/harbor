@@ -58,7 +58,13 @@ jobs:
         # The orchestrator default is github (spec), so PR CI overrides
         # explicitly. Progress output goes to stderr, so the pipe carries
         # only the JSON payload.
-        run: bash harbor.sh dev test --install-source local --json | tee tests/artifacts/run.json
+        # tests/artifacts/ must exist before `tee` opens the file; the
+        # orchestrator only creates per-row subdirs once it starts, which
+        # is too late for the pipeline (pipefail would propagate tee's
+        # exit 1 even on a fully passing matrix).
+        run: |
+          mkdir -p tests/artifacts
+          bash harbor.sh dev test --install-source local --json | tee tests/artifacts/run.json
 
       - name: Upload artifacts
         if: always()
