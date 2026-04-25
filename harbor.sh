@@ -1036,7 +1036,10 @@ link_cli() {
         elif [[ -f "$HOME/.bash_profile" ]]; then
             shell_profile="$HOME/.bash_profile"
         else
-            if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Match any Linux OSTYPE (linux-gnu, linux-musl on Alpine, …)
+            # rather than only GNU. Default to ~/.bashrc — the subsequent
+            # appends are to a new file, which is fine.
+            if [[ "$OSTYPE" == linux* ]]; then
                 shell_profile="$HOME/.bashrc"
             else
                 log_warn "Sorry, but Harbor can't determine which shell configuration file to update."
@@ -1428,7 +1431,7 @@ merge_env_files() {
     fi
 
     # Create a temporary file
-    local temp_file=$(mktemp)
+    local temp_file=$(mktemp -t harbor.XXXXXX)
 
     # Variable to track empty lines
     local empty_lines=0
@@ -1495,7 +1498,7 @@ merge_env_files() {
     if [[ "$(uname)" == "Darwin" ]]; then
         sed -i '' -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$temp_file"
     else
-        sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$temp_file"
+        sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$temp_file"  # harbor-lint disable=HARBOR002
     fi
 
     # Move the temporary file to replace the target file
@@ -1764,7 +1767,8 @@ env_manager() {
             $silent || log_info "Usage: harbor config get <key>"
             return 1
         fi
-        local upper_key=$(echo "$2" | tr '[:lower:]' '[:upper:]' | tr '.-' '__')
+        local upper_key="${2^^}"
+        upper_key="${upper_key//[.-]/_}"
         upper_key="${upper_key#$prefix}"
         value=$(grep "^$prefix$upper_key=" "$env_file" | cut -d '=' -f2-)
         value="${value#\"}" # Remove leading quote if present
@@ -1776,7 +1780,8 @@ env_manager() {
             $silent || log_info "Usage: harbor config set <key> <value>"
             return 1
         fi
-        local upper_key=$(echo "$2" | tr '[:lower:]' '[:upper:]' | tr '.-' '__')
+        local upper_key="${2^^}"
+        upper_key="${upper_key//[.-]/_}"
         upper_key="${upper_key#$prefix}"
         shift 2          # Remove 'set' and the key from the arguments
         local value="$*" # Capture all remaining arguments as the value
@@ -1784,7 +1789,7 @@ env_manager() {
             if [[ "$(uname)" == "Darwin" ]]; then
                 sed -i '' "s|^$prefix$upper_key=.*|$prefix$upper_key=\"$value\"|" "$env_file"
             else
-                sed -i "s|^$prefix$upper_key=.*|$prefix$upper_key=\"$value\"|" "$env_file"
+                sed -i "s|^$prefix$upper_key=.*|$prefix$upper_key=\"$value\"|" "$env_file"  # harbor-lint disable=HARBOR002
             fi
         else
             echo "$prefix$upper_key=\"$value\"" >>"$env_file"
@@ -1799,13 +1804,14 @@ env_manager() {
             $silent || log_info "Usage: harbor config unset <key>"
             return 1
         fi
-        local upper_key=$(echo "$2" | tr '[:lower:]' '[:upper:]' | tr '.-' '__')
+        local upper_key="${2^^}"
+        upper_key="${upper_key//[.-]/_}"
         upper_key="${upper_key#$prefix}"
         if grep -q "^$prefix$upper_key=" "$env_file"; then
             if [[ "$(uname)" == "Darwin" ]]; then
                 sed -i '' "/^$prefix$upper_key=/d" "$env_file"
             else
-                sed -i "/^$prefix$upper_key=/d" "$env_file"
+                sed -i "/^$prefix$upper_key=/d" "$env_file"  # harbor-lint disable=HARBOR002
             fi
             $silent || log_info "Removed $prefix$upper_key"
         else
@@ -1848,7 +1854,8 @@ env_manager() {
             key=${line%%=*}
             value=${line#*=}
             value=$(echo "$value" | sed -E 's/^"(.*)"$/\1/')
-            display_key=$(echo "$key" | tr '[:upper:]' '[:lower:]' | sed 's/_/./')
+            display_key="${key,,}"
+            display_key="${display_key/_/.}"
             printf "%-30s %s\n" "$display_key" "$value"
         done
         ;;
@@ -2281,7 +2288,7 @@ override_yaml_value() {
     local file="$1"
     local key="$2"
     local new_value="$3"
-    local temp_file="$(mktemp)"
+    local temp_file="$(mktemp -t harbor.XXXXXX)"
 
     if [ -z "$file" ] || [ -z "$key" ] || [ -z "$new_value" ]; then
         echo "Usage: override_yaml_value <file_path> <key> <new_value>"
@@ -2547,7 +2554,7 @@ harbor_profile_merge() {
         return 1
     fi
 
-    local tmp_env_merge=$(mktemp)
+    local tmp_env_merge=$(mktemp -t harbor.XXXXXX)
     cp "$profile_file" "$tmp_env_merge"
     merge_env_files "$default_current_env" "$tmp_env_merge"
     merge_env_files "$default_env" "$tmp_env_merge"
@@ -2912,7 +2919,9 @@ get_ip() {
 }
 
 extract_tunnel_url() {
-    grep -oP '(?<=\|  )https://[^[:space:]]+\.trycloudflare\.com(?=\s+\|)' | head -n1
+    # cloudflared emits the URL inside a boxed table row; match the URL
+    # literal itself with POSIX ERE (BSD/BusyBox grep do not support PCRE).
+    grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' | head -n1
 }
 
 establish_tunnel() {
@@ -2969,8 +2978,9 @@ record_history_entry() {
 
         printf '%s\n' "$input" >>"$file"
 
-        # If we've exceeded max entries, remove oldest entries
-        if [ "$(wc -l <"$file")" -gt "$max_entries" ]; then
+        # If we've exceeded max entries, remove oldest entries.
+        # BSD wc left-pads the count — strip whitespace before integer compare.
+        if [ "$(wc -l <"$file" | tr -d ' ')" -gt "$max_entries" ]; then
             tail -n "$max_entries" "$file" >"$file.tmp" && mv "$file.tmp" "$file"
         fi
     fi
@@ -3004,7 +3014,7 @@ run_history() {
     *)
         local max_entries=10
         local history_file="$default_history_file"
-        local tmp_dir=$(mktemp -d)
+        local tmp_dir=$(mktemp -d -t harbor.XXXXXX)
         local services=$(get_active_services)
 
         local output_file="$tmp_dir/selected_command.txt"
@@ -5337,7 +5347,7 @@ harbor_repo_url="https://github.com/av/harbor.git"
 harbor_release_url="https://api.github.com/repos/av/harbor/releases/latest"
 delimiter="|"
 scramble_exit_code=42
-harbor_home=${HARBOR_HOME:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")}
+harbor_home=${HARBOR_HOME:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")}  # harbor-lint disable=HARBOR003
 profiles_dir="$harbor_home/profiles"
 default_profile="$profiles_dir/default.env"
 default_current_env="$harbor_home/.env"

@@ -64,6 +64,9 @@ detect_platform() {
             arch|manjaro|endeavouros)
                 PKG_MANAGER="pacman"
                 ;;
+            alpine)
+                PKG_MANAGER="apk"
+                ;;
             *)
                 if echo "$DISTRO_LIKE" | grep -q "debian"; then
                     PKG_MANAGER="apt"
@@ -71,6 +74,8 @@ detect_platform() {
                     PKG_MANAGER="dnf"
                 elif echo "$DISTRO_LIKE" | grep -q "arch"; then
                     PKG_MANAGER="pacman"
+                elif echo "$DISTRO_LIKE" | grep -q "alpine"; then
+                    PKG_MANAGER="apk"
                 fi
                 ;;
         esac
@@ -170,6 +175,29 @@ pacman_install() {
     fi
 }
 
+apk_install() {
+    # Alpine's community repo provides `docker` and `docker-compose` (v2).
+    # We also ensure `bash` is present — harbor.sh uses bash-only constructs.
+    local missing=()
+    check_command git || missing+=("git")
+    check_command curl || missing+=("curl")
+    check_command bash || missing+=("bash")
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        log_info "Installing missing tools via apk: ${missing[*]}"
+        sudo apk add --no-cache "${missing[@]}"
+    else
+        log_info "git, curl, and bash are already installed"
+    fi
+
+    if ! check_command docker || ! docker compose version >/dev/null 2>&1; then
+        log_info "Installing Docker Engine and Docker Compose plugin via apk"
+        sudo apk add --no-cache docker docker-compose
+    else
+        log_info "Docker and Docker Compose plugin are already installed"
+    fi
+}
+
 brew_install() {
     if ! check_command brew; then
         log_error "Homebrew is required on macOS but was not found"
@@ -210,6 +238,12 @@ ensure_linux_docker_service() {
             log_info "Starting Docker service"
             sudo systemctl start docker || true
         fi
+    elif check_command rc-service && check_command rc-update; then
+        # OpenRC path — Alpine. rc-update is idempotent; rc-service start
+        # returns non-zero if docker is already running, swallow with `|| true`.
+        log_info "Enabling and starting Docker service (OpenRC)"
+        sudo rc-update add docker default >/dev/null 2>&1 || true
+        sudo rc-service docker start >/dev/null 2>&1 || true
     fi
 }
 
@@ -399,6 +433,9 @@ install_requirements() {
             ;;
         linux:pacman)
             pacman_install
+            ;;
+        linux:apk)
+            apk_install
             ;;
         *)
             log_error "No installer path for platform='${PLATFORM}' pkg_manager='${PKG_MANAGER}'"

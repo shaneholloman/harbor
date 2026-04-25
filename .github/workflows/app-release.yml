@@ -11,12 +11,12 @@ on:
     types: [published]
 
 jobs:
-  integration:
-    name: Integration Smoke Suite
-    uses: ./.github/workflows/integration.yml
+  test:
+    name: Test Matrix
+    uses: ./.github/workflows/test.yml
 
   publish-tauri:
-    needs: integration
+    needs: test
     permissions:
       contents: write
     strategy:
