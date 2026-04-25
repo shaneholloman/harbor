@@ -242,6 +242,28 @@ Common issues and solutions.
 - Document ALL env vars from `default.env`
 - No behavior should surprise the user — if you add it, document it
 
+### Screenshot
+
+Every new service ships with one screenshot of its UI in the docs.
+
+- File: `docs/harbor-${handle}.png` — the `harbor-` prefix is the convention for service screenshots; older shots without the prefix predate it.
+- Embed near the top of the doc, right after the lead paragraph, with a descriptive alt text.
+- Capture during Step 9 (Test) while the service is up. Headless Chromium works for any web UI:
+  ```bash
+  python3 -c "
+  from playwright.sync_api import sync_playwright
+  with sync_playwright() as p:
+      b = p.chromium.launch()
+      ctx = b.new_context(viewport={'width': 1280, 'height': 800})
+      page = ctx.new_page()
+      page.goto('http://localhost:${PORT}/', wait_until='networkidle')
+      page.wait_for_timeout(1500)
+      page.screenshot(path='docs/harbor-${handle}.png')
+      b.close()
+  "
+  ```
+- Pick a frame that represents the actual product (a populated dashboard if state is easy to seed; otherwise the first-screen the user sees). 1280×800 is standard. Avoid login screens devoid of branding.
+
 ## Step 7: Service Directory
 
 Create `services/${handle}/.gitignore` for persistent data directories:
@@ -315,6 +337,7 @@ Before declaring the service complete, verify all of these:
 - [ ] `harbor config update` ran after editing `default.env`
 - [ ] Metadata entry in `serviceMetadata.ts` with correct category and doc link
 - [ ] Documentation created with all required sections
+- [ ] Screenshot captured at `docs/harbor-${handle}.png` and embedded in the doc
 - [ ] `.gitignore` in service directory covers generated files
 - [ ] Service starts successfully (`harbor up ${handle}`)
 - [ ] Logs show healthy startup (`harbor logs ${handle}`)
