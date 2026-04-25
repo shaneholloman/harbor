@@ -46,8 +46,12 @@ node_modules/
 # langfuse
 langfuse/db/
 
-# Local scripts
-scripts/
+# Local scripts (catchall) — scripts/* ignores top-level entries individually
+# so we can explicitly un-ignore the tracked subdirs. `scripts/` alone would
+# exclude the directory and make any `!scripts/<name>/…` exception unreachable.
+# scripts/specs/ stays ignored — personal scratch area.
+scripts/*
+!scripts/lint/
 
 # LiteLLM
 litellm/db
@@ -138,3 +142,6 @@ skills-lock.json
 
 # Parcel
 .parcel-cache
+
+# Test artifacts (per-run logs from `harbor dev test`; spec keeps these out of git).
+tests/artifacts/
