@@ -25,6 +25,16 @@ fi
 # so values containing spaces still survive.
 if [ "$(id -u)" = "0" ] && [ -n "${HARBOR_USER_ID}" ] && [ -n "${HARBOR_GROUP_ID}" ]; then
   target_user=$(awk -F: -v uid="${HARBOR_USER_ID}" '$3 == uid {print $1; exit}' /etc/passwd)
+  if [ -z "${target_user}" ]; then
+    # No user with HARBOR_USER_ID in the image — synthesize one so we never fall through as root.
+    target_group=$(awk -F: -v gid="${HARBOR_GROUP_ID}" '$3 == gid {print $1; exit}' /etc/group)
+    if [ -z "${target_group}" ]; then
+      target_group=harbor
+      addgroup -g "${HARBOR_GROUP_ID}" "${target_group}" 2>/dev/null || true
+    fi
+    target_user=harbor
+    adduser -u "${HARBOR_USER_ID}" -G "${target_group}" -D -H "${target_user}" 2>/dev/null || true
+  fi
   if [ -n "${target_user}" ]; then
     quoted_args=""
     for arg in "$@"; do

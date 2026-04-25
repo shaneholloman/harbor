@@ -15,7 +15,10 @@ mkdir -p "${KEY_DIR}"
 
 # ssh-keygen is needed both for generating the placeholder and for validating
 # user-provided keys. Install once up front.
-apk add --no-cache openssh-keygen >/dev/null 2>&1 || true
+if ! apk add --no-cache openssh-keygen >/dev/null 2>&1; then
+  echo "[harbor-beszel-agent-init] FATAL: failed to install openssh-keygen (no network?)" >&2
+  exit 1
+fi
 
 # Files written by this container land on the host bind mount. Chown them to
 # the host user so the user can `rm` / inspect them without `sudo`. Called
@@ -36,7 +39,10 @@ chown_workspace() {
 trap chown_workspace EXIT
 
 is_valid_pubkey() {
-  # ssh-keygen -l -f <file> exits 0 only if the file parses as a public key.
+  # ssh-keygen -l accepts private keys too; reject those explicitly.
+  if grep -q 'BEGIN [A-Z]* PRIVATE KEY' "$1"; then
+    return 1
+  fi
   ssh-keygen -l -f "$1" >/dev/null 2>&1
 }
 
