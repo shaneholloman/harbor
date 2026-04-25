@@ -34,7 +34,7 @@ Harbor is a CLI and companion app that lets you spin up a complete local LLM sta
 
 ## News
 
-- **v0.4.11** - DBHub and Beszel services, container-based test matrix and 3-pass linter, Alpine install support
+- **v0.4.12** - DBHub and Beszel services with zero-click Open WebUI and host pre-provisioning, container-based test matrix and 3-pass linter
 - **v0.4.10** - Fixed SearXNG JSON format and workspace config, fixed CDI seed script skipping build variants
 - **v0.4.9** - Two new Boost modules (`analogical`, `deaf`), Open WebUI native function calling enabled by default, CLI validation fixes
 - **v0.4.8** - Solo CLI and ROS MCP Server services, MiniMax cloud provider, extensive documentation updates
