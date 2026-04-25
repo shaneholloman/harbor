@@ -718,12 +718,17 @@ run_down() {
 
     log_debug "Active services: $services"
 
-    services=$(echo "$services" | tr ' ' '\n')
+    # Sibling-finder uses raw active containers (not the compose-file-filtered
+    # list) so companion services defined inside the same compose file —
+    # e.g. beszel-agent, beszel-agent-init, dify-api, langfuse-worker — get
+    # torn down with their parent. Without this, `harbor down beszel` only
+    # stops the hub and leaves the docker.sock-mounted agent running.
+    local raw_services=$(docker compose ps -a --format "{{.Service}}")
     for service in "$@"; do
-        log_debug "Checking if service '$service' is in active services list..."
-        matched_service=$(echo "$services" | grep "^$service-")
+        log_debug "Checking if service '$service' has companions running..."
+        matched_service=$(echo "$raw_services" | grep "^$service-" || true)
         if [ -n "$matched_service" ]; then
-            matched_services+=("$matched_service")
+            matched_services+=($matched_service)
         fi
     done
 
@@ -1827,12 +1832,15 @@ env_manager() {
         fi
         ;;
     list | ls)
+        # Trailing `|| true` so an empty match (e.g. a service whose
+        # override.env has only comments) reports as exit 0 — listing an
+        # empty set is not an error.
         grep "^$prefix" "$env_file" | grep -v '^#\|^$' | sed "s/^$prefix//" | while read -r line; do
             key=${line%%=*}
             value=${line#*=}
             value=$(echo "$value" | sed -E 's/^"(.*)"$/\1/')
             printf "%-30s %s\n" "$key" "$value"
-        done
+        done || true
         ;;
     reset)
         shift
