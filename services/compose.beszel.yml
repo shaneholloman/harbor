@@ -1,0 +1,58 @@
+services:
+  beszel:
+    container_name: ${HARBOR_CONTAINER_PREFIX}.beszel
+    image: ${HARBOR_BESZEL_IMAGE}:${HARBOR_BESZEL_VERSION}
+    env_file:
+      - ./.env
+      - ./services/beszel/override.env
+    ports:
+      - ${HARBOR_BESZEL_HOST_PORT}:8090
+    volumes:
+      - ${HARBOR_BESZEL_WORKSPACE}/data:/beszel_data
+    networks:
+      - harbor-network
+
+  # One-shot init that materializes the agent KEY_FILE. Needed because the
+  # agent image is distroless (no shell) and the agent binary refuses to
+  # start with an empty key, which would crash-loop the container before
+  # the user has a chance to create the hub admin and copy the SSH key.
+  beszel-agent-init:
+    container_name: ${HARBOR_CONTAINER_PREFIX}.beszel-agent-init
+    image: alpine:3.20
+    env_file:
+      - ./.env
+      - ./services/beszel/override.env
+    environment:
+      HARBOR_BESZEL_AGENT_KEY: ${HARBOR_BESZEL_AGENT_KEY}
+    entrypoint: ["/bin/sh", "/usr/local/bin/agent-key-init.sh"]
+    volumes:
+      - ./services/beszel/agent-key-init.sh:/usr/local/bin/agent-key-init.sh:ro
+      - ${HARBOR_BESZEL_WORKSPACE}/agent:/agent_data
+    networks:
+      - harbor-network
+
+  beszel-agent:
+    container_name: ${HARBOR_CONTAINER_PREFIX}.beszel-agent
+    image: ${HARBOR_BESZEL_AGENT_IMAGE}:${HARBOR_BESZEL_AGENT_VERSION}
+    env_file:
+      - ./.env
+      - ./services/beszel/override.env
+    environment:
+      # Agent listens on a TCP port reachable from the hub over the
+      # internal harbor network at beszel-agent:${HARBOR_BESZEL_AGENT_PORT}.
+      LISTEN: ${HARBOR_BESZEL_AGENT_PORT}
+      # KEY_FILE is populated by beszel-agent-init from
+      # HARBOR_BESZEL_AGENT_KEY (or a placeholder if empty).
+      KEY_FILE: /agent_data/key.pub
+      TOKEN: ${HARBOR_BESZEL_AGENT_TOKEN}
+      HUB_URL: ${HARBOR_BESZEL_AGENT_HUB_URL}
+    volumes:
+      - ${HARBOR_BESZEL_WORKSPACE}/agent:/agent_data:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      beszel-agent-init:
+        condition: service_completed_successfully
+      beszel:
+        condition: service_started
+    networks:
+      - harbor-network

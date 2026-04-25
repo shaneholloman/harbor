@@ -961,4 +961,20 @@ export const serviceMetadata: Record<string, Partial<HarborService>> = {
         wikiUrl: `${wikiUrl}/2.3.78-Satellite-ROS-MCP-Server`,
         tooltip: 'Model Context Protocol (MCP) server for Robot Operating System (ROS). Connects LLMs to robots.',
     },
+    dbhub: {
+        name: 'DBHub',
+        tags: [HST.satellite, HST.api, HST.tools],
+        projectUrl: 'https://github.com/bytebase/dbhub',
+        logo: 'https://www.google.com/s2/favicons?domain=dbhub.ai&sz=128',
+        wikiUrl: `${wikiUrl}/2.3.81-Satellite-DBHub`,
+        tooltip: 'Zero-dependency, token-efficient database MCP server for Postgres, MySQL, SQL Server, MariaDB, and SQLite.',
+    },
+    beszel: {
+        name: 'Beszel',
+        tags: [HST.satellite],
+        projectUrl: 'https://github.com/henrygd/beszel',
+        logo: 'https://www.google.com/s2/favicons?domain=beszel.dev&sz=128',
+        wikiUrl: `${wikiUrl}/2.3.82-Satellite-Beszel`,
+        tooltip: 'Lightweight server monitoring with historical data, docker stats, and alerts.',
+    },
 };
