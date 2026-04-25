@@ -15,4 +15,4 @@ cat /home/appuser/.aider.conf.yml
 git config --global --add safe.directory /root/workspace
 
 echo "Starting aider with args: '$*'"
-aider $@
+aider "$@"

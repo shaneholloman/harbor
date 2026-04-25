@@ -671,7 +671,7 @@ run_up() {
         log_info "Starting services..."
     fi
 
-    log_debug "Running 'up' for services: ${up_args[@]} ${filtered_args[@]}"
+    log_debug "Running 'up' for services: ${up_args[*]} ${filtered_args[*]}"
     $(compose_with_options "${up_args[@]}" "${filtered_args[@]}") up -d --wait
     local up_exit=$?
 
@@ -1703,7 +1703,7 @@ log() {
 }
 
 # Convenience functions for different log levels
-log_debug() { log "DEBUG" "${c_gray}$@${c_nc}"; }
+log_debug() { log "DEBUG" "${c_gray}$*${c_nc}"; }
 log_info() { log "INFO" "$@"; }
 log_warn() { log "WARN" "$@"; }
 log_error() { log "ERROR" "$@"; }
@@ -3905,7 +3905,7 @@ run_opint_command() {
         fi
 
         # Mount the current directory and set it as the working directory
-        $(compose_with_options "$services" "opint") run -v "$original_dir:$original_dir" --workdir "$original_dir" opint $@
+        $(compose_with_options "$services" "opint") run -v "$original_dir:$original_dir" --workdir "$original_dir" opint "$@"
         ;;
     esac
 }
@@ -5483,7 +5483,7 @@ main_entrypoint() {
         ;;
     url)
         shift
-        get_url $@
+        get_url "$@"
         ;;
     qr)
         shift

@@ -13,4 +13,4 @@ echo "Merged Tokens:"
 cat /api_tokens.yml
 
 # Original entrypoint
-python3 /app/main.py $@
+python3 /app/main.py "$@"
