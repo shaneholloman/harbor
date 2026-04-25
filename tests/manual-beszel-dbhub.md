@@ -37,43 +37,29 @@ harbor down beszel
 
 ---
 
-## DBHub — query a database via MCP
+## DBHub — query a database from Open WebUI
 
-**Outcome:** an MCP-aware client (Claude Desktop, Cursor, MCP Inspector) can connect to dbhub and run a SQL query against a real database.
-
-```bash
-harbor up dbhub --open
-```
-
-The landing page (http://localhost:34831) shows the connected source (`default · sqlite · :memory:` in demo mode) and the `execute_sql` tool. **Pass:** that page renders.
-
-Now point a client at it. Pick whichever you have:
-
-**Claude Desktop / Cursor / any MCP client** — add an HTTP MCP server with URL `http://localhost:34831/mcp`, then ask: *"What tables are in the database?"* Expected: the model uses `execute_sql` and returns the demo `employees` schema.
-
-**MCP Inspector** (no client install — runs in your browser):
+**Outcome:** Open WebUI talks to a SQL database through DBHub's MCP tools — no manual configuration.
 
 ```bash
-npx @modelcontextprotocol/inspector
+harbor up webui dbhub --open
 ```
 
-Open the URL it prints. Set Transport = `Streamable HTTP`, URL = `http://localhost:34831/mcp`, click **Connect**, then **Tools → execute_sql** and run:
+In Open WebUI, sign in (or create an admin), pick a tool-calling model, and ask:
 
-```sql
-SELECT first_name, last_name, salary FROM employees LIMIT 3;
-```
+> *"List 3 employees from the database with their salaries."*
 
-**Pass:** three rows of demo employees come back.
+**Pass:** the model invokes the `execute_sql` tool and returns three rows from the demo `employees` table.
 
-To switch to a real database, set a DSN and restart:
+To point at a real database, set a DSN and restart:
 
 ```bash
 harbor config set dbhub.dsn "postgres://user:pw@host:5432/dbname?sslmode=disable"
 harbor restart dbhub
 ```
 
-The landing page now lists your database; the same MCP client query flow works against it.
+The same chat now answers questions about your data.
 
 ```bash
-harbor down dbhub
+harbor down dbhub webui
 ```
