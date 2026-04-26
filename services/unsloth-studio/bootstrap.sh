@@ -24,15 +24,43 @@ ENV_FILE="/harbor_env"
 KEY_VAR="HARBOR_UNSLOTH_STUDIO_API_KEY"
 KEY_PLACEHOLDER="sk-unsloth-studio"
 STUDIO_URL="${STUDIO_URL:-http://unsloth-studio:8000}"
+# Sidecar key file: cross-integration containers (webui, boost, aider) read
+# this at runtime to override the env-baked placeholder API key. Bind-mounted
+# from ./services/unsloth-studio/.studio-auth/ on the host, which is also the
+# parent dir cross-integrations mount read-only as /run/unsloth-studio-auth/.
+KEY_SIDECAR_DIR="/studio_auth"
+KEY_SIDECAR_FILE="${KEY_SIDECAR_DIR}/api_key.txt"
 
 # Files written by this container land on bind mounts; chown them on every
 # exit path so the host user can edit/delete .env without sudo.
 chown_workspace() {
   if [ -n "${HARBOR_USER_ID}" ] && [ -n "${HARBOR_GROUP_ID}" ]; then
     chown "${HARBOR_USER_ID}:${HARBOR_GROUP_ID}" "${ENV_FILE}" 2>/dev/null || true
+    if [ -f "${KEY_SIDECAR_FILE}" ]; then
+      chown "${HARBOR_USER_ID}:${HARBOR_GROUP_ID}" "${KEY_SIDECAR_FILE}" 2>/dev/null || true
+    fi
   fi
 }
 trap chown_workspace EXIT
+
+# Persist the minted key to a sidecar text file so cross-integration start
+# scripts can pick it up at runtime (Compose env substitution happens at
+# create time, before this sidecar runs — see compose.x.*.unsloth-studio.yml).
+# Idempotent: no-op if the file already matches.
+write_key_sidecar() {
+  new_key="$1"
+  if [ ! -d "${KEY_SIDECAR_DIR}" ]; then
+    return 0
+  fi
+  if [ -f "${KEY_SIDECAR_FILE}" ]; then
+    existing=$(cat "${KEY_SIDECAR_FILE}" 2>/dev/null | tr -d '\n')
+    if [ "${existing}" = "${new_key}" ]; then
+      return 0
+    fi
+  fi
+  printf '%s\n' "${new_key}" > "${KEY_SIDECAR_FILE}"
+  chmod 0640 "${KEY_SIDECAR_FILE}" 2>/dev/null || true
+}
 
 if ! apk add --no-cache curl jq >/dev/null 2>&1; then
   echo "[unsloth-studio-bootstrap] FATAL: failed to install curl + jq (no network?)" >&2
@@ -81,12 +109,18 @@ case "${KEY}" in
       -H "Authorization: Bearer ${KEY}" \
       "${STUDIO_URL}/v1/models" || true)
     if [ "${status}" = "200" ]; then
+      # Always refresh the sidecar file — cross-integration containers read
+      # it at runtime even when bootstrap is a no-op.
+      write_key_sidecar "${KEY}"
       echo "[unsloth-studio-bootstrap] existing API key still valid — skipping"
       exit 0
     fi
     echo "[unsloth-studio-bootstrap] stored key returned HTTP ${status}; re-bootstrapping (Studio DB likely reset)"
     ;;
   *)
+    # Manual override: don't re-mint, but still write the sidecar so
+    # cross-integration containers can read this key at runtime.
+    write_key_sidecar "${KEY}"
     echo "[unsloth-studio-bootstrap] manual override detected (${KEY_VAR} not in sk-unsloth-* shape) — leaving it alone"
     exit 0
     ;;
@@ -162,7 +196,11 @@ if [ -z "${NEW_KEY}" ]; then
 fi
 
 # Step 6: persist the key into .env so cross-integration compose files
-# (webui, boost, aider) substitute it on their next compose-up.
+# (webui, boost, aider) substitute it on their next compose-up. Also write
+# a sidecar text file at ${KEY_SIDECAR_FILE} so cross-integration start
+# scripts can read the freshly-minted key at runtime — Compose env
+# substitution happens at create time, before this sidecar runs.
 write_key "${NEW_KEY}"
+write_key_sidecar "${NEW_KEY}"
 echo "[unsloth-studio-bootstrap] wrote ${KEY_VAR} (prefix: $(printf '%s' "${NEW_KEY}" | cut -c1-12)...) to .env"
 echo "[unsloth-studio-bootstrap] zero-click bootstrap complete"

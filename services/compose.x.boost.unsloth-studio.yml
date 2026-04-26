@@ -3,13 +3,34 @@ services:
     environment:
       - HARBOR_BOOST_OPENAI_URL_UNSLOTH_STUDIO=http://unsloth-studio:8000/v1
       - HARBOR_BOOST_OPENAI_KEY_UNSLOTH_STUDIO=${HARBOR_UNSLOTH_STUDIO_API_KEY}
-    # Defer boost's start until the bootstrap sidecar has minted and written
-    # the API key. This is necessary (but not sufficient) to avoid auth
-    # errors on the very first `harbor up unsloth-studio boost` — Compose
-    # bakes ${HARBOR_UNSLOTH_STUDIO_API_KEY} into the container's Config.Env
-    # at compose-up time, before bootstrap runs, so a follow-up
-    # `harbor up boost --force-recreate` (or a second `harbor up`) is still
-    # required to pick up the freshly-written key. See docs Troubleshooting.
+    volumes:
+      # Read-only mount of the bootstrap sidecar's persisted key file.
+      # Boost's command wrapper (below) reads
+      # /run/unsloth-studio-auth/api_key.txt at runtime and exports
+      # HARBOR_BOOST_OPENAI_KEY_UNSLOTH_STUDIO before launching uvicorn.
+      # This bypasses Compose's create-time env substitution, which would
+      # otherwise bake the placeholder key into the boost container's
+      # Config.Env on the very first `harbor up unsloth-studio boost`.
+      - ./services/unsloth-studio/.studio-auth:/run/unsloth-studio-auth:ro
+    # Override the Dockerfile CMD with a small shell wrapper that reads
+    # the sidecar key file (if present) and re-exports the boost-side env
+    # var before starting uvicorn. Keep the rest of the launch identical
+    # to services/boost/Dockerfile so this stays a thin wrapper.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -r /run/unsloth-studio-auth/api_key.txt ]; then
+          k=$$(tr -d '\n' < /run/unsloth-studio-auth/api_key.txt)
+          if [ -n "$$k" ]; then
+            export HARBOR_BOOST_OPENAI_KEY_UNSLOTH_STUDIO="$$k"
+          fi
+        fi
+        exec uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --timeout-graceful-shutdown 0
+    # Defer boost's start until the bootstrap sidecar has minted and
+    # written both .env and the sidecar key file. Combined with the
+    # runtime read in the command wrapper above, this makes the very
+    # first `harbor up unsloth-studio boost` work end-to-end with no
+    # second pass.
     depends_on:
       unsloth-studio-bootstrap:
         condition: service_completed_successfully

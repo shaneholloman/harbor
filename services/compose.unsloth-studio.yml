@@ -90,6 +90,11 @@ services:
       # so writing here means the next `harbor up <integration>` picks
       # up the real key without any manual step.
       - ./.env:/harbor_env
+      # Sidecar key file: bootstrap writes the minted key as plain text to
+      # ./services/unsloth-studio/.studio-auth/api_key.txt so cross-integration
+      # containers can read it at runtime, bypassing Compose's create-time
+      # env substitution. See bootstrap.sh + compose.x.*.unsloth-studio.yml.
+      - ./services/unsloth-studio/.studio-auth:/studio_auth
     depends_on:
       unsloth-studio:
         condition: service_healthy
