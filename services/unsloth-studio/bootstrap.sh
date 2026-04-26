@@ -25,6 +25,14 @@ ENV_FILE="/harbor_env"
 KEY_VAR="HARBOR_UNSLOTH_STUDIO_API_KEY"
 KEY_PLACEHOLDER="sk-unsloth-studio"
 STUDIO_URL="${STUDIO_URL:-http://unsloth-studio:8000}"
+# Optional default model auto-load. When non-empty, the bootstrap calls
+# POST /v1/load with this value after the API key is in place — turns a
+# fresh `harbor up unsloth-studio` into a fully-ready inference endpoint
+# for webui/boost/aider with no manual UI step. Studio loads off the
+# bind-mounted HF cache; when the model is already cached the call is
+# near-instant. Best-effort: a non-200 response is logged but does not
+# fail the sidecar.
+DEFAULT_MODEL="${HARBOR_UNSLOTH_STUDIO_DEFAULT_MODEL:-}"
 # Sidecar key file: cross-integration containers (webui, boost, aider) read
 # this at runtime to override the env-baked placeholder API key. Bind-mounted
 # from ./services/unsloth-studio/.studio-auth/ on the host, which is also the
@@ -67,6 +75,40 @@ if ! apk add --no-cache curl jq >/dev/null 2>&1; then
   echo "[unsloth-studio-bootstrap] FATAL: failed to install curl + jq (no network?)" >&2
   exit 1
 fi
+
+# Best-effort: load HARBOR_UNSLOTH_STUDIO_DEFAULT_MODEL into Studio if set.
+# Idempotent — checks /v1/models first and skips when the requested model
+# is already loaded. Container restarts drop the loaded model, so this
+# also re-loads after `harbor down/up`. Failures are logged, not fatal.
+maybe_load_default_model() {
+  bearer="$1"
+  if [ -z "${DEFAULT_MODEL}" ]; then
+    return 0
+  fi
+  if [ -z "${bearer}" ]; then
+    return 0
+  fi
+  loaded=$(curl -sS -H "Authorization: Bearer ${bearer}" \
+    "${STUDIO_URL}/v1/models" 2>/dev/null \
+    | jq -r '.data[0].id // empty' 2>/dev/null || true)
+  if [ "${loaded}" = "${DEFAULT_MODEL}" ]; then
+    echo "[unsloth-studio-bootstrap] default model '${DEFAULT_MODEL}' already loaded — skipping"
+    return 0
+  fi
+  echo "[unsloth-studio-bootstrap] loading default model '${DEFAULT_MODEL}' (first download may take minutes)..."
+  load_status=$(curl -sS -o /tmp/load.out -w '%{http_code}' \
+    -X POST "${STUDIO_URL}/v1/load" \
+    -H "Authorization: Bearer ${bearer}" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -nc --arg m "${DEFAULT_MODEL}" '{model_path:$m}')" \
+    --max-time 1800 || echo "000")
+  if [ "${load_status}" = "200" ]; then
+    echo "[unsloth-studio-bootstrap] default model loaded"
+  else
+    echo "[unsloth-studio-bootstrap] WARN: /v1/load returned HTTP ${load_status} (continuing): $(head -c 300 /tmp/load.out 2>/dev/null)" >&2
+  fi
+  rm -f /tmp/load.out
+}
 
 # Read current value of HARBOR_UNSLOTH_STUDIO_API_KEY from .env.
 current_key() {
@@ -114,6 +156,7 @@ case "${KEY}" in
       # it at runtime even when bootstrap is a no-op.
       write_key_sidecar "${KEY}"
       echo "[unsloth-studio-bootstrap] existing API key still valid — skipping"
+      maybe_load_default_model "${KEY}"
       exit 0
     fi
     echo "[unsloth-studio-bootstrap] stored key returned HTTP ${status}; re-bootstrapping (Studio DB likely reset)"
@@ -123,6 +166,7 @@ case "${KEY}" in
     # cross-integration containers can read this key at runtime.
     write_key_sidecar "${KEY}"
     echo "[unsloth-studio-bootstrap] manual override detected (${KEY_VAR} not in sk-unsloth-* shape) — leaving it alone"
+    maybe_load_default_model "${KEY}"
     exit 0
     ;;
 esac
@@ -204,4 +248,5 @@ fi
 write_key "${NEW_KEY}"
 write_key_sidecar "${NEW_KEY}"
 echo "[unsloth-studio-bootstrap] wrote ${KEY_VAR} (prefix: $(printf '%s' "${NEW_KEY}" | cut -c1-12)...) to .env"
+maybe_load_default_model "${NEW_KEY}"
 echo "[unsloth-studio-bootstrap] zero-click bootstrap complete"
