@@ -100,7 +100,7 @@ maybe_load_default_model() {
   if [ "${load_status}" = "200" ]; then
     echo "[unsloth-studio-bootstrap] default model loaded"
   else
-    echo "[unsloth-studio-bootstrap] WARN: /v1/load returned HTTP ${load_status} (continuing): $(head -c 300 /tmp/load.out 2>/dev/null)" >&2
+    echo "[unsloth-studio-bootstrap] WARN: /v1/load returned HTTP ${load_status} (continuing): $(dd if=/tmp/load.out bs=1 count=300 2>/dev/null)" >&2
   fi
   rm -f /tmp/load.out
 }
