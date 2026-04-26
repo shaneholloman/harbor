@@ -68,9 +68,10 @@ services:
   # pattern (services/beszel/agent-register.sh) — runs after the main
   # service is healthy, talks to its API, persists the result.
   #
-  # Studio's auth.db is not bind-mounted, so it resets on every container
-  # recreate. The script handles that by validating the stored key first
-  # and re-running the flow only when it 401s. See bootstrap.sh.
+  # Studio's auth.db IS bind-mounted (see the unsloth-studio service above),
+  # so the minted account+key survive `harbor down/up`. The script validates
+  # the stored key first and re-runs the flow only when it 401s. See
+  # bootstrap.sh.
   unsloth-studio-bootstrap:
     container_name: ${HARBOR_CONTAINER_PREFIX}.unsloth-studio-bootstrap
     image: alpine:3.20

@@ -14,10 +14,11 @@
 #   4. POST /api/auth/api-keys mints a long-lived bearer key (sk-unsloth-...)
 #      that other Harbor services consume via HARBOR_UNSLOTH_STUDIO_API_KEY.
 #
-# Studio's auth.db lives in the container (no bind mount), so it resets on
-# every container recreate. The script handles this by always testing the
-# stored key first — if it works, exit fast (idempotent); if it 401s the
-# DB has been wiped and we re-run the full flow with a fresh bootstrap pw.
+# Studio's auth.db is bind-mounted at ./services/unsloth-studio/.studio-auth/,
+# so the minted account+key normally survive container recreate. The script
+# is still idempotent — it tests the stored key first and exits fast when it
+# works, and re-runs the full flow only if the key 401s (i.e. someone wiped
+# the auth dir or rotated the key out-of-band).
 set -e
 
 ENV_FILE="/harbor_env"
