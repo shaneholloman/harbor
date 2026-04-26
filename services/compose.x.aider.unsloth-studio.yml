@@ -3,3 +3,13 @@ services:
     volumes:
       # Mount into the same directory the merger scans (/home/appuser/.aider).
       - ./services/aider/configs/aider.unsloth-studio.yml:/home/appuser/.aider/unsloth-studio.yml
+    # Defer aider's start until the bootstrap sidecar has minted and written
+    # the API key. This is necessary (but not sufficient) to avoid auth
+    # errors on the very first `harbor up unsloth-studio aider` — Compose
+    # bakes ${HARBOR_UNSLOTH_STUDIO_API_KEY} into the container's Config.Env
+    # at compose-up time, before bootstrap runs, so a follow-up
+    # `harbor up aider --force-recreate` (or a second `harbor up`) is still
+    # required to pick up the freshly-written key. See docs Troubleshooting.
+    depends_on:
+      unsloth-studio-bootstrap:
+        condition: service_completed_successfully

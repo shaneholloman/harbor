@@ -2,3 +2,13 @@ services:
   webui:
     volumes:
       - ./services/webui/configs/config.unsloth-studio.json:/app/configs/config.unsloth-studio.json
+    # Defer webui's start until the bootstrap sidecar has minted and written
+    # the API key. This is necessary (but not sufficient) to avoid auth
+    # errors on the very first `harbor up unsloth-studio webui` — Compose
+    # bakes ${HARBOR_UNSLOTH_STUDIO_API_KEY} into the container's Config.Env
+    # at compose-up time, before bootstrap runs, so a follow-up
+    # `harbor up webui --force-recreate` (or a second `harbor up`) is still
+    # required to pick up the freshly-written key. See docs Troubleshooting.
+    depends_on:
+      unsloth-studio-bootstrap:
+        condition: service_completed_successfully

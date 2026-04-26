@@ -3,3 +3,13 @@ services:
     environment:
       - HARBOR_BOOST_OPENAI_URL_UNSLOTH_STUDIO=http://unsloth-studio:8000/v1
       - HARBOR_BOOST_OPENAI_KEY_UNSLOTH_STUDIO=${HARBOR_UNSLOTH_STUDIO_API_KEY}
+    # Defer boost's start until the bootstrap sidecar has minted and written
+    # the API key. This is necessary (but not sufficient) to avoid auth
+    # errors on the very first `harbor up unsloth-studio boost` — Compose
+    # bakes ${HARBOR_UNSLOTH_STUDIO_API_KEY} into the container's Config.Env
+    # at compose-up time, before bootstrap runs, so a follow-up
+    # `harbor up boost --force-recreate` (or a second `harbor up`) is still
+    # required to pick up the freshly-written key. See docs Troubleshooting.
+    depends_on:
+      unsloth-studio-bootstrap:
+        condition: service_completed_successfully
