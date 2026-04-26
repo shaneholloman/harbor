@@ -92,11 +92,31 @@ case "${KEY}" in
     ;;
 esac
 
-# Step 2: scrape the bootstrap creds from the served HTML.
+# Step 2: scrape the bootstrap creds from the served HTML. Studio only
+# emits __UNSLOTH_BOOTSTRAP__ until first-run setup completes; after that
+# it's gone. So if we land here with no creds, the auth DB still has a
+# user account — either someone changed the password manually, or our
+# stored key was revoked while the DB persisted (the .studio-auth bind
+# mount survives container recreates).
 HTML=$(curl -sS "${STUDIO_URL}/")
 BOOTSTRAP_JSON=$(printf '%s' "${HTML}" | grep -oE '__UNSLOTH_BOOTSTRAP__=\{[^<]*\}' | head -1 | sed 's/^__UNSLOTH_BOOTSTRAP__=//')
 if [ -z "${BOOTSTRAP_JSON}" ]; then
-  echo "[unsloth-studio-bootstrap] FATAL: __UNSLOTH_BOOTSTRAP__ literal not found in served HTML" >&2
+  cat >&2 <<'EOF'
+[unsloth-studio-bootstrap] FATAL: cannot bootstrap — no first-run creds in HTML
+                           and the existing key in HARBOR_UNSLOTH_STUDIO_API_KEY
+                           is invalid. The auth DB at
+                           ./services/unsloth-studio/.studio-auth/ is intact but
+                           we have no usable credentials.
+
+Recovery options (pick one, then `harbor up unsloth-studio` again):
+  A) Reset the auth DB (loses any custom users/passwords/named keys):
+       harbor down unsloth-studio
+       harbor exec unsloth-studio rm -f /home/unsloth/.unsloth/studio/auth/auth.db
+     OR delete the file directly on the host:
+       rm ./services/unsloth-studio/.studio-auth/auth.db
+  B) If you generated a replacement key in the Studio UI:
+       harbor config set unsloth-studio.api.key sk-unsloth-...
+EOF
   exit 1
 fi
 USERNAME=$(printf '%s' "${BOOTSTRAP_JSON}" | jq -r '.username')
