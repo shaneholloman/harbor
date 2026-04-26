@@ -10,7 +10,7 @@ services:
       - ./.env
       - ./services/raglite/override.env
     volumes:
-      - ${HARBOR_HF_CACHE}:/root/.cache/huggingface
+      - ${HARBOR_HF_CACHE:-./services/raglite/.hf-cache}:/root/.cache/huggingface
       - ${HARBOR_RAGLITE_WORKSPACE}/raglite:/root/raglite
       - ${HARBOR_RAGLITE_WORKSPACE}/chainlit:/.chainlit
     environment:

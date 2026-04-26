@@ -17,7 +17,7 @@ services:
       - HUGGINGFACEHUB_API_TOKEN=${HARBOR_HF_TOKEN}
     volumes:
       - ${HARBOR_LOCALAI_WORKSPACE}/models:/build/models
-      - ${HARBOR_HF_CACHE}:/root/.cache/huggingface
+      - ${HARBOR_HF_CACHE:-./services/localai/.hf-cache}:/root/.cache/huggingface
       - ${HARBOR_LLAMACPP_CACHE}:/root/.cache/llama.cpp
       - ${HARBOR_VLLM_CACHE}:/root/.cache/vllm
     networks:

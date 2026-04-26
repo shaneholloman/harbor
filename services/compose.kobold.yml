@@ -8,7 +8,7 @@ services:
     volumes:
       - ${HARBOR_KOBOLD_WORKSPACE}:/workspace/:rw
       - ${HARBOR_OLLAMA_CACHE}:/ollama
-      - ${HARBOR_HF_CACHE}:/hf
+      - ${HARBOR_HF_CACHE:-./services/kobold/.hf-cache}:/hf
       - ${HARBOR_LLAMACPP_CACHE}:/llamacpp
       - ${HARBOR_VLLM_CACHE}:/vllm
     ports:
