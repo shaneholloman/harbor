@@ -1,4 +1,7 @@
 services:
   aider:
     volumes:
-      - ./services/aider/configs/aider.unsloth-studio.yml:/root/.aider/unsloth-studio.yml
+      # Mount into the same directory the merger scans (/home/appuser/.aider).
+      # Other aider cross-files still mount under /root/.aider, which the
+      # appuser-uid container can't read; only this integration is fixed here.
+      - ./services/aider/configs/aider.unsloth-studio.yml:/home/appuser/.aider/unsloth-studio.yml
