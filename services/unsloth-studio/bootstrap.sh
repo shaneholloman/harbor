@@ -71,11 +71,6 @@ write_key_sidecar() {
   chmod 0640 "${KEY_SIDECAR_FILE}" 2>/dev/null || true
 }
 
-if ! apk add --no-cache curl jq >/dev/null 2>&1; then
-  echo "[unsloth-studio-bootstrap] FATAL: failed to install curl + jq (no network?)" >&2
-  exit 1
-fi
-
 # Best-effort: load HARBOR_UNSLOTH_STUDIO_DEFAULT_MODEL into Studio if set.
 # Idempotent — checks /v1/models first and skips when the requested model
 # is already loaded. Container restarts drop the loaded model, so this
@@ -216,9 +211,10 @@ if [ -z "${JWT}" ]; then
 fi
 
 # Step 4: change the password. Studio rejects /api/auth/api-keys until
-# must_change_password is cleared. We pick a fresh random password each
-# run; nobody needs to read it back (the API key is the persistent handle).
-NEW_PW="harbor-bootstrap-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | dd bs=1 count=24 2>/dev/null)"
+# must_change_password is cleared. HARBOR_UNSLOTH_STUDIO_PASSWORD is harbor.sh-
+# persisted so users can read it back via `harbor config get`; the random fallback
+# only fires for raw `docker compose` runs that bypass harbor.sh.
+NEW_PW="${HARBOR_UNSLOTH_STUDIO_PASSWORD:-harbor-bootstrap-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | dd bs=1 count=24 2>/dev/null)}"
 CHANGE_RESP=$(curl -sS -X POST "${STUDIO_URL}/api/auth/change-password" \
   -H "Authorization: Bearer ${JWT}" \
   -H 'Content-Type: application/json' \

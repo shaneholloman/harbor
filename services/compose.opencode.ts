@@ -37,7 +37,31 @@ wait_for() {
 }
 
 discover() {
-  curl -sf "$$1/v1/models" 2>/dev/null
+  url="$$1"
+  key="$$2"
+  if [ -n "$$key" ]; then
+    curl -sf -H "Authorization: Bearer $$key" "$$url/v1/models" 2>/dev/null
+  else
+    curl -sf "$$url/v1/models" 2>/dev/null
+  fi
+}
+
+# Per-backend API key resolver. Cross-integration files (e.g. unsloth-studio)
+# drop a sidecar key file at /run/<backend>-auth/api_key.txt — read it at
+# runtime so the discovery script picks up freshly-minted bootstrap keys
+# without a second pass. Defaults to "sk-harbor" for backends that don't
+# validate auth (ollama, llamacpp).
+resolve_key() {
+  name="$$1"
+  key_file="/run/$$name-auth/api_key.txt"
+  if [ -r "$$key_file" ]; then
+    k=$$(tr -d '\\n' < "$$key_file")
+    if [ -n "$$k" ]; then
+      printf '%s' "$$k"
+      return 0
+    fi
+  fi
+  printf '%s' "sk-harbor"
 }
 
 echo '{"$$schema":"https://opencode.ai/config.json","provider":{' > "$$CONFIG_FILE"
@@ -46,12 +70,13 @@ first=true
 for backend in ${backendList}; do
   name="${backendNameExtract}"
   url="${backendUrlExtract}"
+  api_key=$$(resolve_key "$$name")
 
   echo "Waiting for $$name at $$url..."
   wait_for "$$url" || { echo "Backend $$name not available after 30s, skipping"; continue; }
 
   echo "Discovering models from $$name..."
-  models=$$(discover "$$url") || { echo "Failed to get models from $$name"; continue; }
+  models=$$(discover "$$url" "$$api_key") || { echo "Failed to get models from $$name"; continue; }
 
   model_ids=$$(echo "$$models" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
   [ -z "$$model_ids" ] && { echo "No models found for $$name"; continue; }
@@ -60,7 +85,7 @@ for backend in ${backendList}; do
   first=false
 
   cat >> "$$CONFIG_FILE" << PROVIDER
-"harbor-$$name":{"npm":"@ai-sdk/openai-compatible","name":"$$name (Harbor)","options":{"baseURL":"$$url/v1","apiKey":"sk-harbor"},"models":{
+"harbor-$$name":{"npm":"@ai-sdk/openai-compatible","name":"$$name (Harbor)","options":{"baseURL":"$$url/v1","apiKey":"$$api_key"},"models":{
 PROVIDER
 
   mfirst=true

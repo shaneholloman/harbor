@@ -49,6 +49,7 @@ export const OPENAI_COMPATIBLE_BACKENDS: Record<string, BackendInfo> = {
   lmdeploy: { url: 'http://lmdeploy:23333', name: 'LMDeploy' },
   aphrodite: { url: 'http://aphrodite:2242', name: 'Aphrodite' },
   ktransformers: { url: 'http://ktransformers:8088', name: 'KTransformers' },
+  'unsloth-studio': { url: 'http://unsloth-studio:8000', name: 'Unsloth Studio' },
 };
 
 /** Maps backend service names to their Harbor config model keys. */
@@ -159,11 +160,19 @@ export function addBackendDependency(
   service: ServiceDefinition,
   backendService: string
 ): void {
-  const existingDeps = service.depends_on || [];
-  const depsArray = Array.isArray(existingDeps)
-    ? existingDeps
-    : Object.keys(existingDeps);
+  const existingDeps = service.depends_on;
 
+  // Preserve object-form depends_on so per-service conditions written by
+  // cross-integration YAML files (e.g. service_completed_successfully on
+  // an unsloth-studio bootstrap sidecar) survive this merge.
+  if (existingDeps && !Array.isArray(existingDeps)) {
+    if (!(backendService in existingDeps)) {
+      existingDeps[backendService] = { condition: 'service_started' };
+    }
+    return;
+  }
+
+  const depsArray = Array.isArray(existingDeps) ? existingDeps : [];
   service.depends_on = [
     ...new Set([...depsArray, backendService])
   ];
@@ -196,15 +205,32 @@ export function injectBackendEnv(
     service.environment = {};
   }
 
-  // Inject backend connection details
+  // Skip keys that a cross-integration YAML has already set — preserves
+  // explicit overrides (e.g. compose.x.openclaw.unsloth-studio.yml uses
+  // the lowercase service handle for HARBOR_BACKEND_NAME instead of the
+  // display name).
+  const hasKey = (key: string): boolean => {
+    if (Array.isArray(service.environment)) {
+      const prefix = `${key}=`;
+      return service.environment.some((e: string) => e === key || e.startsWith(prefix));
+    }
+    return key in (service.environment as Record<string, string>);
+  };
+
   if (Array.isArray(service.environment)) {
-    service.environment.push(
-      `HARBOR_BACKEND_NAME=${backend.info.name}`,
-      `HARBOR_BACKEND_URL=${backend.info.url}`
-    );
+    if (!hasKey('HARBOR_BACKEND_NAME')) {
+      service.environment.push(`HARBOR_BACKEND_NAME=${backend.info.name}`);
+    }
+    if (!hasKey('HARBOR_BACKEND_URL')) {
+      service.environment.push(`HARBOR_BACKEND_URL=${backend.info.url}`);
+    }
   } else {
-    service.environment.HARBOR_BACKEND_NAME = backend.info.name;
-    service.environment.HARBOR_BACKEND_URL = backend.info.url;
+    if (!hasKey('HARBOR_BACKEND_NAME')) {
+      service.environment.HARBOR_BACKEND_NAME = backend.info.name;
+    }
+    if (!hasKey('HARBOR_BACKEND_URL')) {
+      service.environment.HARBOR_BACKEND_URL = backend.info.url;
+    }
   }
 }
 

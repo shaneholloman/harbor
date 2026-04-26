@@ -6,9 +6,10 @@ echo "Harbor: ollama init"
 
 main() {
   pull_default_models
-  # Wait a little bit for the docker to detach to avoid
-  # printing "container exited (0)" message (which is not an error, but could look like one)
-  sleep 15
+  # Marker is read by the healthcheck; tail keeps the sidecar in running|healthy
+  # so `compose --wait` doesn't flag a clean exit as premature failure.
+  mkdir -p /run/harbor && touch /run/harbor/ollama-init-done
+  exec tail -f /dev/null
 }
 
 pull_default_models() {

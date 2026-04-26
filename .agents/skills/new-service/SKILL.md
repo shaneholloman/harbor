@@ -276,6 +276,37 @@ logs/
 
 Add any config files, entrypoints, or Dockerfiles the service needs into `services/${handle}/`.
 
+### Sidecars that need CLI tools — never `apk add` at runtime
+
+If you add an init/bootstrap sidecar that needs tools beyond what `alpine:3.20` ships
+(`curl`, `jq`, `sqlite`, `ssh-keygen`, etc.), **do not** install them with `apk add` in
+the entrypoint. Every container creation re-pays the install cost: empirically `apk add
+--no-cache curl jq` takes ~24s on each `harbor up`, blocking everything that depends on
+the sidecar via `service_completed_successfully` (e.g. webui waiting on
+`unsloth-studio-bootstrap`).
+
+The correct pattern is one of:
+
+**(a) Inline Dockerfile in compose** — preferred for sidecars wholly owned by one service:
+
+```yaml
+services:
+  ${handle}-bootstrap:
+    build:
+      context: ./services/${handle}
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN apk add --no-cache curl jq
+    entrypoint: ["/bin/sh", "/usr/local/bin/bootstrap.sh"]
+    volumes:
+      - ./services/${handle}/bootstrap.sh:/usr/local/bin/bootstrap.sh:ro
+```
+
+**(b) Standalone Dockerfile** — `services/${handle}/Dockerfile.bootstrap` + `build: { context, dockerfile }` — use when the sidecar pulls in non-trivial setup (multi-stage, COPYed assets) or could be shared across services.
+
+Either way the apk install runs **once at build time**, not on every up. The build
+itself is cached by Docker, so subsequent ups skip it entirely.
+
 ## Step 8: Cross-Service Integration (If Needed)
 
 Cross-files are applied when multiple services run together. They live in `services/` with
