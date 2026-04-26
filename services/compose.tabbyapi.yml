@@ -10,7 +10,7 @@ services:
     environment:
       - NAME=TabbyAPI
     volumes:
-      - ${HARBOR_HF_CACHE}:/models/hf
+      - ${HARBOR_HF_CACHE:-./services/tabbyapi/.hf-cache}:/models/hf
       - ${HARBOR_LLAMACPP_CACHE}:/models/llama.cpp
 
       - ./shared/yaml_config_merger.py:/app/yaml_config_merger.py
