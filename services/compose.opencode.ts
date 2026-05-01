@@ -10,6 +10,14 @@ import { getAllActiveBackends, addBackendDependency, type DetectedBackend } from
  *
  * Note: All $ must be escaped as $$ for Docker Compose interpolation.
  */
+function generateHarborCliInitScript(): string {
+  return `
+if [ -x /harbor/harbor_cli_init.sh ]; then
+  /harbor/harbor_cli_init.sh || echo "harbor-cli init failed; continuing without harbor CLI"
+fi
+`.trim();
+}
+
 function generateDiscoveryScript(backends: DetectedBackend[]): string {
   const backendList = backends.map(b => `${b.service}=${b.info.url}`).join(' ');
 
@@ -20,6 +28,7 @@ function generateDiscoveryScript(backends: DetectedBackend[]): string {
 
   return `
 set -e
+${generateHarborCliInitScript()}
 CONFIG_DIR="${configDirDefault}"
 mkdir -p "$$CONFIG_DIR"
 CONFIG_FILE="$$CONFIG_DIR/opencode.json"
@@ -145,10 +154,20 @@ export default async function apply(ctx: ComposeContext): Promise<ComposeObject>
     }
   }
 
+  const hasHarborCli = services.includes('harbor-cli');
+
   // Detect active backends using shared utility
   const activeBackends = getAllActiveBackends(services);
 
   if (activeBackends.length === 0) {
+    if (hasHarborCli) {
+      compose.services.opencode.entrypoint = [
+        '/bin/bash',
+        '-c',
+        `${generateHarborCliInitScript()}\nexec "$$@"`,
+        '--',
+      ];
+    }
     return compose;
   }
 

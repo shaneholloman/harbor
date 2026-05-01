@@ -140,6 +140,9 @@ __harbor*.yml
 # Skills
 skills-lock.json
 
+# Claude local runtime state
+.claude/scheduled_tasks.lock
+
 # Parcel
 .parcel-cache
 
