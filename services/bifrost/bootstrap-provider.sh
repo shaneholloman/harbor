@@ -28,7 +28,7 @@ request() {
   method="$1"
   url="$2"
   data="${3:-}"
-  body_file="$(mktemp)"
+  body_file="$(mktemp -t harbor.XXXXXX)"
 
   if [ -n "$data" ]; then
     status="$(curl -sS -o "$body_file" -w '%{http_code}' -X "$method" "$url" \

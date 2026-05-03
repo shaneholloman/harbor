@@ -36,7 +36,7 @@ done
 
 # Provision docker group if socket is mounted
 if [ -S /var/run/docker.sock ]; then
-  DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+  DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)  # harbor-lint disable=HARBOR010
 
   # Remove conflicting groups
   if command -v groupdel >/dev/null 2>&1; then
