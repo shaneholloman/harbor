@@ -248,19 +248,12 @@ Every new service ships with one screenshot of its UI in the docs.
 
 - File: `docs/harbor-${handle}.png` — the `harbor-` prefix is the convention for service screenshots; older shots without the prefix predate it.
 - Embed near the top of the doc, right after the lead paragraph, with a descriptive alt text.
-- Capture during Step 9 (Test) while the service is up. Headless Chromium works for any web UI:
+- Capture during Step 9 (Test) while the service is up. For web UIs, use `agent-browser` so the screenshot comes from the same browser workflow used for validation:
   ```bash
-  python3 -c "
-  from playwright.sync_api import sync_playwright
-  with sync_playwright() as p:
-      b = p.chromium.launch()
-      ctx = b.new_context(viewport={'width': 1280, 'height': 800})
-      page = ctx.new_page()
-      page.goto('http://localhost:${PORT}/', wait_until='networkidle')
-      page.wait_for_timeout(1500)
-      page.screenshot(path='docs/harbor-${handle}.png')
-      b.close()
-  "
+  agent-browser open http://localhost:${PORT}/
+  agent-browser wait --load networkidle
+  agent-browser screenshot docs/harbor-${handle}.png
+  agent-browser close
   ```
 - Pick a frame that represents the actual product (a populated dashboard if state is easy to seed; otherwise the first-screen the user sees). 1280×800 is standard. Avoid login screens devoid of branding.
 
@@ -335,23 +328,45 @@ Check the service's docs for the correct Ollama env var name. Common variants:
 
 ## Step 9: Test
 
+The goal is to prove the service is useful from an end-user point of view. Avoid superficial checks that do not validate the important workflow. A container starting, a port returning HTML, or `/health` returning OK is necessary but not sufficient.
+
 **Build/pull first:**
 ```bash
 harbor pull ${handle}   # pre-built image
 harbor build ${handle}  # source build
 ```
 
-**Start and verify:**
+**Start the user-facing scenario:**
 ```bash
 harbor up ${handle}
-harbor logs ${handle}
 ```
 
-**Check for:**
-- Service starts without errors in logs
-- Port is accessible: `curl -s http://localhost:${PORT}` or `harbor open ${handle}`
-- If it has an API, make a test request
-- If it depends on other services, test with them running
+If the service's main value depends on Harbor integrations, start the integrated scenario too. For example, for an AI app that should use local models and search, test the real workflow with:
+
+```bash
+harbor up ${handle} ollama searxng
+```
+
+**Validate the most important workflow:**
+- Pick the one workflow an end user would run immediately after `harbor up`.
+- For web frontends, use `agent-browser` to interact with the UI: sign up or log in, complete onboarding, configure/select the Harbor backend if needed, submit a real prompt/task/upload, and verify the expected result appears.
+- For APIs, make the real API call that exercises the service's core feature, not just `/health`.
+- For CLI services, run the primary command a user would run and verify the output is meaningful.
+- If the service depends on other Harbor services, verify the integrated feature works end-to-end (for example, an LLM-backed response actually uses Ollama/llama.cpp; a search feature actually uses SearXNG).
+
+Useful web UI loop:
+```bash
+agent-browser open http://localhost:${PORT}/
+agent-browser snapshot -i
+# interact with refs from the snapshot
+agent-browser click @e3
+agent-browser snapshot -i
+```
+
+Also check logs for errors after the workflow, not only during startup:
+```bash
+harbor logs ${handle}
+```
 
 **Clean up after testing:**
 ```bash
@@ -371,8 +386,10 @@ Before declaring the service complete, verify all of these:
 - [ ] Screenshot captured at `docs/harbor-${handle}.png` and embedded in the doc
 - [ ] `.gitignore` in service directory covers generated files
 - [ ] Service starts successfully (`harbor up ${handle}`)
-- [ ] Logs show healthy startup (`harbor logs ${handle}`)
-- [ ] Cross-files created for relevant integrations
+- [ ] The primary end-user workflow was tested and works; not only startup/health/port checks
+- [ ] Web UI services were validated with `agent-browser` interactions when applicable
+- [ ] Logs show healthy behavior after the end-user workflow (`harbor logs ${handle}`)
+- [ ] Cross-files created and end-to-end tested for relevant integrations
 - [ ] `harbor dev add-logos` ran to resolve the service logo (or added manually)
 
 ## Common Pitfalls

@@ -993,4 +993,12 @@ export const serviceMetadata: Record<string, Partial<HarborService>> = {
         wikiUrl: `${wikiUrl}/2.3.84-Satellite-Bifrost`,
         tooltip: 'Fast OpenAI-compatible AI gateway with provider routing, failover, observability, and Harbor backend bootstrapping.',
     },
+    surfsense: {
+        name: 'SurfSense',
+        tags: [HST.satellite, HST.rag, HST.workflows],
+        projectUrl: 'https://github.com/MODSetter/SurfSense',
+        logo: 'https://www.google.com/s2/favicons?domain=www.surfsense.com&sz=128',
+        wikiUrl: `${wikiUrl}/2.3.85-Satellite-SurfSense`,
+        tooltip: 'Private NotebookLM-style research workspace with RAG, citations, browser capture, reports, and podcast generation.',
+    },
 };
